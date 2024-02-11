@@ -1,0 +1,170 @@
+---
+title: "iScience_2023_Matosevic"
+author: "Sagar Utturkar"
+date: "October 2021"
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    toc: true
+    highlight: github
+---
+
+
+# Publication: [PMID: 38053639](https://pubmed.ncbi.nlm.nih.gov/38053639/)
+
+Lupo KB, Torregrosa-Allen S, Elzey BD, **Utturkar S. M.**, Lanman NA, Cohen-Gadol AA, Slivova V, McIntosh M, Pollok KE, Matosevic S. TIGIT contributes to the regulation of 4-1BB and does not define NK cell dysfunction in glioblastoma. iScience. 2023 Oct 28;26(12):108353. doi: 10.1016/j.isci.2023.108353. PMID: 38053639; PMCID: PMC10694670.   
+
+
+```{r setwd, warning=FALSE, message=FALSE, echo=FALSE, tidy=TRUE}
+
+setwd("C:/Users/sutturka/Documents/GitHub/publication-codeshare/iScience_2023_Matosevic")
+
+```
+
+
+
+# Codeshare:
+
+```{r DE_analysis_1, warning=FALSE, message=FALSE, echo=TRUE, tidy=TRUE}
+
+require(data.table)
+library(dplyr)
+library(tidyverse)
+library(pheatmap)
+library(RColorBrewer)
+library(openxlsx)
+library(knitr)
+library(kableExtra)
+library(ggpubr)
+library(ggplot2)
+
+
+```
+
+
+
+## DE Analysis:
+Differential expression (DE) analysis was performed using the edgeR method (version 3.32.1) and genes with False Discovery Rate (FDR) < 0.01 were denoted as significant.  
+
+
+```{r DE_pipeline, warning=FALSE, message=FALSE, echo=TRUE, tidy=TRUE, eval=FALSE}
+
+## DE SYNTAX  
+
+# RScript ./DE_edgeR.R  <counts.TXT>  <CONTROL_NAME>  <TREATMENT_NAME>   <NO_OF_CONTROL_REPLICATES>    <NO_OF_TREATMENT_REPLICATES>   <ANNOTATION FILE PATH>")
+
+
+## Thigh_vs_Tneg
+
+setwd("./Thigh_vs_Tneg")
+system("RScript DE_edgeR.R  counts.TXT  Tneg  Thigh  3 3   ./Annotations/Human_20FEB2020.TXT")
+
+
+## Tlow_vs_Tneg
+
+setwd("./Tlow_vs_Tneg")
+system("RScript DE_edgeR.R  counts.TXT  Tneg  Tlow  3 3 ./Annotations/Human_20FEB2020.TXT")
+
+
+```
+
+
+## GSEA Analysis: (Figure 2B)
+Gene set enrichment analysis (GSEA) was performed using GSEA tool (version 4). GSEA was used to find pathways (gene sets) significantly enriched between TIGIT-high, TIGIT-medium, and TIGIT-negative (p < 0.05). The [Biocarta database](https://www.gsea-msigdb.org/gsea/msigdb/human/geneset/BIOCARTA_SET_PATHWAY.html) was used for this analysis, and GSEA was performed on a pre-ranked gene list with (signed log2FC*-log10p value) used as the ranking criteria.
+
+
+```{r GSEA_dotplot, warning=FALSE, message=FALSE, echo=FALSE, tidy=TRUE, eval=TRUE, fig.height=6, fig.width=6}
+
+# GSEA plot was created with selected significant (p < 0.05)
+
+mydata <- read.table("./data/GSEA_biocarta.TXT", header = TRUE,  stringsAsFactors = FALSE, sep = "\t")
+
+ggplot(data=mydata) + 
+  aes(x=NAME,  y=NES, size=Pvalue, color=Group) + 
+  geom_point(alpha = 0.8)+
+  ylab("NES") +
+  ggtitle("Gene Set Enrichment") +
+  xlab("") +
+  coord_flip() +
+  theme_minimal() +
+  scale_color_manual(values = c("Thigh" = "#1d91c0", "Tlow" = "#fe9929")) +
+  scale_y_continuous(limits = c(-2, 2)) +
+  scale_size_continuous(trans = "reverse") +
+  theme(panel.grid.major = element_blank(), 
+    panel.grid.minor = element_blank(),
+    panel.grid.major.y = element_line(size = 0.2, linetype = 'dashed', colour = "grey")
+    ) +
+  theme(axis.line = element_line(color="black", size = 0.5)) +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  geom_hline(yintercept = 0) +
+  theme(plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+        axis.title = element_text(size = 14, face = "bold"),
+        axis.text = element_text(size = 12)) +
+  guides(colour = guide_legend(override.aes = list(size=5)))
+
+
+```
+
+
+## clusterProfiler Analysis: (Figure 2E)
+Functional and pathway enrichment analysis was performed using R-package clusterProfiler (v3.18.1). 
+
+```{r clusterProfiler_cnetplot , , warning=FALSE, message=FALSE, echo=show, tidy=TRUE, results="hide", eval=FALSE}
+
+## cnetplot  for selected pathways from Thigh_vs_Tneg
+
+require(data.table)
+library(clusterProfiler)
+library(org.Hs.eg.db)
+library(org.Mm.eg.db)
+library(org.Cf.eg.db)
+library(org.Sc.sgd.db)
+library(org.Rn.eg.db)
+library(AnnotationDbi)
+library(ggplot2)
+library(cowplot)
+library(ReactomePA)
+
+## GSEA enrichment via clusterProfiler
+
+Thigh_ranked = read.table(file = "./data/Thigh_GSEA.rnk", sep = "\t", header = T)
+
+Thigh_logFC = readRDS(file = "./data/edgeR_DE.rds")
+  
+x <- bitr(Thigh_ranked$Gene_ID, fromType="ENSEMBL", toType="SYMBOL", OrgDb="org.Hs.eg.db")
+
+y = dplyr::left_join(x, Thigh_ranked, by = c("ENSEMBL" = "Gene_ID"))
+y = dplyr::left_join(y, Thigh_logFC, by = c("ENSEMBL" = "Gene_ID"))
+y = dplyr::distinct(y, SYMBOL, .keep_all = T)
+
+l = y$Rank
+names(l) = y$SYMBOL
+
+logFC_vec = y$logFC
+names(logFC_vec) = y$SYMBOL
+
+gmtfile <- "./data/c2.cp.biocarta.v7.4.symbols.gmt"
+biocarta_GMT <- read.gmt(gmtfile)
+
+biocarta_GSEA <- GSEA(l, TERM2GENE=biocarta_GMT, verbose=FALSE, pvalueCutoff = 1)
+
+rownames(biocarta_GSEA@result) = gsub("BIOCARTA_", "", rownames(biocarta_GSEA@result))
+
+biocarta_GSEA@result$ID = gsub("BIOCARTA_", "", biocarta_GSEA@result$ID)
+
+biocarta_GSEA@result$Description = gsub("BIOCARTA_", "", biocarta_GSEA@result$Description)
+
+
+biocarta_show = c("FAS_PATHWAY", "41BB_PATHWAY", 
+                  "TGFB_PATHWAY", "CXCR4_PATHWAY",
+                  "CTLA4_PATHWAY", "STRESS_PATHWAY")
+
+
+cnetplot(biocarta_GSEA, showCategory = biocarta_show, 
+         colorEdge = TRUE, foldChange = logFC_vec, cex_label_gene = 0.8)
+
+
+```
+
+![](C:/Users/sutturka/Documents/GitHub/publication-codeshare/iScience_2023_Matosevic/data/Thigh_cneplot.png)  
+
